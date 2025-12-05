@@ -41,6 +41,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <mutex>
 
 #include "nav2_costmap_2d/cost_values.hpp"
 #include "nav2_costmap_2d/layer.hpp"
@@ -115,6 +116,7 @@ public:
 
   void addPlugin(std::shared_ptr<Layer> plugin)
   {
+    std::lock_guard<std::mutex> lock(plugins_mutex_);
     plugins_.push_back(plugin);
   }
 
@@ -173,6 +175,7 @@ private:
   unsigned int bx0_, bxn_, by0_, byn_;
 
   std::vector<std::shared_ptr<Layer>> plugins_;
+  std::mutex plugins_mutex_;
 
   bool initialized_;
   bool size_locked_;

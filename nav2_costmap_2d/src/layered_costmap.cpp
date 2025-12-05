@@ -93,6 +93,7 @@ void LayeredCostmap::resizeMap(
   std::unique_lock<Costmap2D::mutex_t> lock(*(costmap_.getMutex()));
   size_locked_ = size_locked;
   costmap_.resizeMap(size_x, size_y, resolution, origin_x, origin_y);
+  std::lock_guard<std::mutex> plugins_lock(plugins_mutex_);
   for (vector<std::shared_ptr<Layer>>::iterator plugin = plugins_.begin();
     plugin != plugins_.end(); ++plugin)
   {
@@ -128,29 +129,32 @@ void LayeredCostmap::updateMap(double robot_x, double robot_y, double robot_yaw)
       "Robot is out of bounds of the costmap!");
   }
 
-  if (plugins_.size() == 0) {
-    return;
-  }
-
-  minx_ = miny_ = std::numeric_limits<double>::max();
-  maxx_ = maxy_ = std::numeric_limits<double>::lowest();
-
-  for (vector<std::shared_ptr<Layer>>::iterator plugin = plugins_.begin();
-    plugin != plugins_.end(); ++plugin)
   {
-    double prev_minx = minx_;
-    double prev_miny = miny_;
-    double prev_maxx = maxx_;
-    double prev_maxy = maxy_;
-    (*plugin)->updateBounds(robot_x, robot_y, robot_yaw, &minx_, &miny_, &maxx_, &maxy_);
-    if (minx_ > prev_minx || miny_ > prev_miny || maxx_ < prev_maxx || maxy_ < prev_maxy) {
-      RCLCPP_WARN(
-        rclcpp::get_logger(
-          "nav2_costmap_2d"), "Illegal bounds change, was [tl: (%f, %f), br: (%f, %f)], but "
-        "is now [tl: (%f, %f), br: (%f, %f)]. The offending layer is %s",
-        prev_minx, prev_miny, prev_maxx, prev_maxy,
-        minx_, miny_, maxx_, maxy_,
-        (*plugin)->getName().c_str());
+    std::lock_guard<std::mutex> plugins_lock(plugins_mutex_);
+    if (plugins_.size() == 0) {
+      return;
+    }
+
+    minx_ = miny_ = std::numeric_limits<double>::max();
+    maxx_ = maxy_ = std::numeric_limits<double>::lowest();
+
+    for (vector<std::shared_ptr<Layer>>::iterator plugin = plugins_.begin();
+      plugin != plugins_.end(); ++plugin)
+    {
+      double prev_minx = minx_;
+      double prev_miny = miny_;
+      double prev_maxx = maxx_;
+      double prev_maxy = maxy_;
+      (*plugin)->updateBounds(robot_x, robot_y, robot_yaw, &minx_, &miny_, &maxx_, &maxy_);
+      if (minx_ > prev_minx || miny_ > prev_miny || maxx_ < prev_maxx || maxy_ < prev_maxy) {
+        RCLCPP_WARN(
+          rclcpp::get_logger(
+            "nav2_costmap_2d"), "Illegal bounds change, was [tl: (%f, %f), br: (%f, %f)], but "
+          "is now [tl: (%f, %f), br: (%f, %f)]. The offending layer is %s",
+          prev_minx, prev_miny, prev_maxx, prev_maxy,
+          minx_, miny_, maxx_, maxy_,
+          (*plugin)->getName().c_str());
+      }
     }
   }
 
@@ -172,10 +176,13 @@ void LayeredCostmap::updateMap(double robot_x, double robot_y, double robot_yaw)
   }
 
   costmap_.resetMap(x0, y0, xn, yn);
-  for (vector<std::shared_ptr<Layer>>::iterator plugin = plugins_.begin();
-    plugin != plugins_.end(); ++plugin)
   {
-    (*plugin)->updateCosts(costmap_, x0, y0, xn, yn);
+    std::lock_guard<std::mutex> plugins_lock(plugins_mutex_);
+    for (vector<std::shared_ptr<Layer>>::iterator plugin = plugins_.begin();
+      plugin != plugins_.end(); ++plugin)
+    {
+      (*plugin)->updateCosts(costmap_, x0, y0, xn, yn);
+    }
   }
 
   bx0_ = x0;
@@ -189,6 +196,7 @@ void LayeredCostmap::updateMap(double robot_x, double robot_y, double robot_yaw)
 bool LayeredCostmap::isCurrent()
 {
   current_ = true;
+  std::lock_guard<std::mutex> plugins_lock(plugins_mutex_);
   for (vector<std::shared_ptr<Layer>>::iterator plugin = plugins_.begin();
     plugin != plugins_.end(); ++plugin)
   {
@@ -204,6 +212,7 @@ void LayeredCostmap::setFootprint(const std::vector<geometry_msgs::msg::Point> &
     footprint_spec,
     inscribed_radius_, circumscribed_radius_);
 
+  std::lock_guard<std::mutex> plugins_lock(plugins_mutex_);
   for (vector<std::shared_ptr<Layer>>::iterator plugin = plugins_.begin();
     plugin != plugins_.end();
     ++plugin)
